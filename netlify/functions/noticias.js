@@ -1,5 +1,4 @@
-const Parser = require('rss-parser');
-const parser = new Parser();
+const fetch = require('node-fetch');
 
 exports.handler = async function(event, context) {
   const headers = {
@@ -10,24 +9,19 @@ exports.handler = async function(event, context) {
   };
 
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers,
-      body: ''
-    };
+    return { statusCode: 200, headers, body: '' };
   }
 
-  // Intentar múltiples fuentes de noticias
-  const fuentes = [
-    'https://www.latercera.com/feed/',
-    'https://www.emol.com/rss/rss.asp',
-    'https://www.cooperativa.cl/noticias/site/tax/port/all/rss_____.xml'
-  ];
-
-  for (const url of fuentes) {
-    try {
-      const feed = await parser.parseURL(url);
-      const noticias = feed.items.slice(0, 8).map(item => item.title);
+  try {
+    // Usar rss2json como intermediario
+    const rssUrl = 'https://www.latercera.com/feed/';
+    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&api_key=YOUR_API_KEY&count=8`;
+    
+    const response = await fetch(apiUrl);
+    const data = await response.json();
+    
+    if (data.status === 'ok' && data.items && data.items.length > 0) {
+      const noticias = data.items.map(item => item.title);
       
       return {
         statusCode: 200,
@@ -35,31 +29,30 @@ exports.handler = async function(event, context) {
         body: JSON.stringify({
           success: true,
           noticias: noticias,
-          fuente: url,
           actualizacion: new Date().toISOString()
         })
       };
-    } catch (error) {
-      console.log(`Error con ${url}:`, error.message);
-      continue; // Intentar siguiente fuente
+    } else {
+      throw new Error('No se pudieron obtener noticias');
     }
+  } catch (error) {
+    console.error('Error:', error);
+    
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        success: false,
+        noticias: [
+          'Las noticias se actualizarán automáticamente',
+          'Dashboard funcionando correctamente',
+          'Temperatura y hora en tiempo real',
+          'Sistema de noticias en configuración',
+          'Próxima actualización en breve',
+          'Gracias por tu paciencia'
+        ],
+        error: error.message
+      })
+    };
   }
-
-  // Si todas las fuentes fallan
-  return {
-    statusCode: 200,
-    headers,
-    body: JSON.stringify({
-      success: false,
-      noticias: [
-        'Tragedia en Recoleta: niño de 11 años fallece tras choque con furgón escolar',
-        'Mundial Sub-20: Marruecos se corona campeón',
-        'Universidad de Chile avanza a semifinales de Copa Sudamericana',
-        'Mundial de Ciclismo de Pista se realizará en Peñalolén',
-        'Ibai Llanos anuncia su visita a Chile',
-        'Desierto Florido cubre Atacama'
-      ],
-      error: 'Todas las fuentes RSS fallaron'
-    })
-  };
 };
